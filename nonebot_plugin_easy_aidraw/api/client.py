@@ -75,15 +75,22 @@ def _results_from(resp: ImageResponse) -> list[str | Path]:
 
 
 async def _post_json(client: httpx.AsyncClient, url: str, headers: dict, payload: dict) -> ImageResponse:
+    logger.debug(f"[绘图] POST {url}")
     logger.debug(f"[绘图] 请求体: {payload}")
     logger.debug(f"[绘图] headers: {_safe_headers(headers)}")
     try:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
+    except httpx.TimeoutException as e:
+        logger.warning(f"[绘图] 上游超时 url={url}: {type(e).__name__}: {e}")
+        raise RuntimeError("⏰ 上游服务超时，请稍后重试") from e
     except httpx.HTTPStatusError as e:
         body = (e.response.text or "").strip()
-        logger.warning(f"[绘图] 上游错误 {e.response.status_code}: {body}")
+        logger.warning(f"[绘图] 上游 HTTP {e.response.status_code} url={url} body={body[:500]}")
         raise RuntimeError(sanitize_error(e.response.status_code, body)) from e
+    except httpx.HTTPError as e:
+        logger.warning(f"[绘图] 上游网络错误 url={url}: {type(e).__name__}: {e}")
+        raise RuntimeError("🌐 网络错误，请稍后重试") from e
     resp = ImageResponse.model_validate(response.json())
     logger.info(f"[绘图] 响应: {_sanitize_for_log(resp.model_dump(exclude_none=True))}")
     return resp
@@ -113,19 +120,27 @@ async def edit_image(prompt: str, image_b64: str) -> tuple[list[str | Path], dic
     if cfg["backend"] == "openai":
         form_data["quality"] = cfg.get("quality") or "standard"
 
-    files = {"image": ("image.png", base64.b64decode(image_b64), "image/png")}
+    image_bytes_in = base64.b64decode(image_b64)
+    files = {"image": ("image.png", image_bytes_in, "image/png")}
     auth = cfg["headers"].get("Authorization")
     headers = {"Authorization": auth} if auth else {}
 
+    logger.debug(f"[绘图] edit_image form_data={form_data} image_size={len(image_bytes_in)} url={cfg['api_url_edits']}")
     async with httpx.AsyncClient(**_client_kwargs(cfg)) as client:
         logger.info(f"[绘图] 请求: model={cfg['model']}, prompt_len={len(prompt)}, mode=img2img")
         try:
             response = await client.post(cfg["api_url_edits"], headers=headers, data=form_data, files=files)
             response.raise_for_status()
+        except httpx.TimeoutException as e:
+            logger.warning(f"[绘图] 上游超时 url={cfg['api_url_edits']}: {type(e).__name__}: {e}")
+            raise RuntimeError("⏰ 上游服务超时，请稍后重试") from e
         except httpx.HTTPStatusError as e:
             body = (e.response.text or "").strip()
-            logger.warning(f"[绘图] 上游错误 {e.response.status_code}: {body}")
+            logger.warning(f"[绘图] 上游 HTTP {e.response.status_code} url={cfg['api_url_edits']} body={body[:500]}")
             raise RuntimeError(sanitize_error(e.response.status_code, body)) from e
+        except httpx.HTTPError as e:
+            logger.warning(f"[绘图] 上游网络错误 url={cfg['api_url_edits']}: {type(e).__name__}: {e}")
+            raise RuntimeError("🌐 网络错误，请稍后重试") from e
         resp = ImageResponse.model_validate(response.json())
         logger.info(f"[绘图] 响应: {_sanitize_for_log(resp.model_dump(exclude_none=True))}")
 

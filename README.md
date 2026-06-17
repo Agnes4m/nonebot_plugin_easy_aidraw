@@ -7,7 +7,7 @@
 
 <div align="center">
 
-# nonebot_plugin_easy_aidraw 0.1.1
+# nonebot_plugin_easy_aidraw 0.2.4
 
 _✨NoneBot & AI 绘图 插件 ✨_
 
@@ -58,6 +58,7 @@ draw_model = "gpt-image-2"              # 模型名称
 - `draw_api_url` 留空时按 `draw_backend` 走官方默认（`openai` / `gemini` / `sd`）都不填写默认为`openai`。
 - 填写时必须以 `/v1` 结尾，例如 `https://api.openai.com/v1`（插件会自动拼接 `/images/generations`）。若填写了 `/v1/images/generations` 也会被自动截断为 base URL。
 - 文生图与图生图共用同一个 base URL，结尾分别追加 `/images/generations` 与 `/images/edits`。
+- 若用户配置了中转站 `draw_api_url`，图生图端点会自动复用同一 base（中转站走同一代理），无需额外配置。
 
 ### 使用
 
@@ -66,6 +67,14 @@ draw_model = "gpt-image-2"              # 模型名称
 - `/绘图 --n 2 同一提示词生成两张`
 - 回复图片 + `/绘图 画成动漫风`（以图片为垫图，走 `/images/edits`）
 - 回复消息 + `/绘图 ...`（从被回复消息中提取图片）
+
+返回示例：
+
+```
+🎨 文生图 | 正在使用 gpt-image-2 生成中...
+[图片]
+⏱️ 耗时 12.3 秒 | 🎯 文生图 | 🖼️ 1 张 | 🧠 gpt-image-2
+```
 
 ## 完整参数配置
 
@@ -93,6 +102,7 @@ draw_api_url_edits = ""                          # 图生图 base URL（留空�
 ```
 
 > 图生图采用 OpenAI 官方 `multipart/form-data` 规范（`image` 文件 + `prompt` + 其他表单字段），兼容中转站。
+> 垫图统一以 bytes 形式传递，不透传 URL。
 
 ### 请求参数
 
@@ -110,7 +120,7 @@ draw_proxy = ""                   # HTTP 代理，如 http://127.0.0.1:10808
 draw_user_cooldown = 60           # 单用户冷却时间（秒），0 禁用，超级用户无视
 draw_concurrent = false           # 是否允许并发请求；false（默认）=前一个请求完成才继续下一个
 draw_nsfw_enabled = false         # 启用 NSFW 关键词过滤（仅群聊）
-draw_nsfw_keywords = []           # 敏感词列表
+draw_nsfw_keywords = []           # 敏感词列表（子串匹配，命中即拒绝）
 draw_whitelist_mode = false       # 白名单模式（true 启用白名单，false 走黑名单）
 draw_whitelist = []               # 白名单用户 ID（QQ 号），对群/私聊统一生效
 draw_blacklist = []               # 黑名单用户 ID
@@ -130,7 +140,7 @@ draw_cache_ttl = 86400            # 缓存过期时间（秒）
 /清理绘图缓存
 ```
 
-清理超过 `draw_cache_ttl` 秒的缓存图片（按 mtime 判断）。仅在 `draw_cache_enabled=true` 时生效。
+清理超过 `draw_cache_ttl` 秒的缓存图片（按 mtime 判断），会一并清空子目录。仅在 `draw_cache_enabled=true` 时生效。
 
 ## 功能
 
@@ -138,12 +148,28 @@ draw_cache_ttl = 86400            # 缓存过期时间（秒）
 - **请求队列**：默认前一个请求完成才继续下一个；`draw_concurrent=true` 时允许并发
 - **用户冷却**：单用户 N 秒内只能请求一次（可配置，超级用户无视）
 - **图生图**：回复图片时自动走 `/images/edits`（OpenAI 官方 multipart/form-data），文生图与图生图端点可独立配置
-- NSFW 关键词过滤（仅群聊）
+- 提示语带模式标签（文生图 / 图生图），并输出耗时、张数、模型
+- NSFW 敏感词过滤（仅群聊，子串匹配，命中即拒绝）
 - 黑白名单访问控制（按用户 ID，全局生效）
 - URL / base64 两种返回格式（URL 发送失败自动回退下载转 base64 重发）
+- 垫图统一以 bytes 形式上游传递（不向 API 透传 URL）
 - 可选图片缓存与一键清理
 - 子选项：`--model` / `--size` / `--n` 覆盖全局配置
-- 发送图片后输出耗时与中文 token 用量（`⏱️ 耗时 X 秒 | 📊 消耗 输入 N、输出 M tokens`，token 为 0 时只输出耗时）
+- 错误信息脱敏：401/429/4xx/5xx 走白名单友好提示
+- 内置调用指标：成功 / 失败 / 冷却 / 黑名单 / NSFW 等计数，每次请求结束写日志
+
+## 0.2.1 变更
+
+- api.py 拆为 `api/{backends,cache,client,config_loader,errors,filters}.py` 子包
+- 提示语 `🎨 文生图/图生图 | 正在使用 X 生成中...`
+- 临时 b64 文件统一 `try/finally` 上下文管理器
+- 缓存清理覆盖 png/jpg/jpeg/webp/tmp，并清理空目录
+- NSFW 改子串匹配，可选 opencc 简繁归一
+- 错误信息脱敏白名单（401/429/4xx/5xx）
+- `n>1` 时返回并发送所有图片
+- 移除 `draw_prompt_max_chars` 与 `draw_nsfw_patterns`，由上游 API 决定
+- pydantic v2 `ConfigDict` 替换 `class Config`
+- 移除 `arp.main_args` 兼容代码
 
 ## 协议
 

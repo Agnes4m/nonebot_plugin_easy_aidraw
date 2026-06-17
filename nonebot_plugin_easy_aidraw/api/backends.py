@@ -69,9 +69,14 @@ def resolve_edit_url(backend: str, txt2img_url: str, edits_url: str) -> str:
     if edits_url:
         return _resolve_endpoint(edits_url, backend, BACKEND_DEFAULTS.get(backend, {}).get("img2img", "/images/edits"))
     defaults = BACKEND_DEFAULTS.get(backend)
-    if defaults:
-        return defaults["base"] + defaults["img2img"]
-    return txt2img_url.replace("/images/generations", "/images/edits")
+    if not defaults:
+        return txt2img_url.replace("/images/generations", "/images/edits")
+    default_base = defaults["base"]
+    if txt2img_url and not txt2img_url.startswith(default_base):
+        base = _normalize_base(txt2img_url.rstrip("/"))
+        if base.endswith("/v1"):
+            return f"{base}{defaults['img2img']}"
+    return default_base + defaults["img2img"]
 
 
 def needs_api_key(backend: str) -> bool:

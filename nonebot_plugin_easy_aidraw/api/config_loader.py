@@ -1,4 +1,4 @@
-"""配置加载：env 解析、白/黑名单、敏感词。"""
+"""env 配置加载、白/黑名单、敏感词。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ _config: dict | None = None
 
 
 def reset_config_cache() -> None:
-    """测试/热重载场景下清空缓存。"""
     global _config
     _config = None
 
@@ -47,23 +46,21 @@ def get_config() -> dict:
         "api_key": api_key,
         "model": default_model,
         "backend": backend,
-        "default_size": cfg.get("draw_default_size", "1024x1024"),
-        "timeout": cfg.get("draw_timeout", 120),
+        "default_size": cfg.get("draw_default_size"),
+        "timeout": cfg.get("draw_timeout"),
         "proxy": cfg.get("draw_proxy"),
-        "nsfw_enabled": cfg.get("draw_nsfw_enabled", False),
+        "nsfw_enabled": cfg.get("draw_nsfw_enabled"),
         "nsfw_keywords": cfg.get("draw_nsfw_keywords", []),
-        "nsfw_patterns": cfg.get("draw_nsfw_patterns", []),
-        "whitelist_mode": cfg.get("draw_whitelist_mode", False),
+        "whitelist_mode": cfg.get("draw_whitelist_mode"),
         "whitelist": cfg.get("draw_whitelist", []),
         "blacklist": cfg.get("draw_blacklist", []),
         "quality": cfg.get("draw_quality"),
         "n": cfg.get("draw_n"),
-        "user_cooldown": cfg.get("draw_user_cooldown", 60),
-        "concurrent": cfg.get("draw_concurrent", False),
-        "cache_enabled": cfg.get("draw_cache_enabled", False),
-        "cache_dir": cfg.get("draw_cache_dir", "data/nonebot_plugin_easy_aidraw"),
-        "cache_ttl": cfg.get("draw_cache_ttl", 86400),
-        "prompt_max_chars": cfg.get("draw_prompt_max_chars", 4000),
+        "user_cooldown": cfg.get("draw_user_cooldown"),
+        "concurrent": cfg.get("draw_concurrent"),
+        "cache_enabled": cfg.get("draw_cache_enabled"),
+        "cache_dir": cfg.get("draw_cache_dir"),
+        "cache_ttl": cfg.get("draw_cache_ttl"),
         "headers": headers,
     }
     return _config
@@ -82,6 +79,5 @@ def check_nsfw(prompt: str) -> tuple[bool, str | None]:
     return match_nsfw(
         prompt,
         keywords=cfg.get("nsfw_keywords", []),
-        patterns=cfg.get("nsfw_patterns", []),
         enabled=cfg.get("nsfw_enabled", False),
     )

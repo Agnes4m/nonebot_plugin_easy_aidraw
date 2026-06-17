@@ -1,16 +1,16 @@
 [project]
 name = "nonebot-plugin-easy-aidraw"
-version = "0.2.3"
-description = "AI绘图插件 for NoneBot2，支持openai/sd绘图API"
+version = "0.2.4"
+description = "AI绘图插件 for NoneBot2，支持多种绘图API"
 authors = [
     {name = "Agnes4m", email = "Z735803792@163.com"},
 ]
 dependencies = [
-    "nonebot2>=2.5.0",
+    "nonebot2>=2.5.0,<3.0.0",
     "nonebot-adapter-onebot>=2.4.4",
     "httpx>=0.25.0",
     "pillow>=10.0.0",
-    "pydantic>=2.0.0",
+    "pydantic>=2.0.0,<3.0.0",
     "nonebot-plugin-alconna>=0.62.0",
 ]
 requires-python = ">=3.10"

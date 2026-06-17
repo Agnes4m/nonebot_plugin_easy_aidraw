@@ -17,7 +17,6 @@ from nonebot_plugin_alconna import Image, UniMessage, UniMsg, on_alconna
 
 from .api import (
     check_nsfw,
-    check_prompt_length,
     check_whitelist_blacklist,
     cleanup_cache,
     edit_image,
@@ -90,27 +89,56 @@ def _find_image_segment(event: Event, unimsg: UniMsg):
     return None
 
 
-async def _fetch_image_bytes(bot: Bot, seg) -> bytes | None:
-    data = seg.data or {}
-    if data.get("base64"):
-        return base64.b64decode(data["base64"])
+async def _download_bytes(url: str) -> bytes | None:
+    try:
+        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT) as client:
+            data = (await client.get(url)).content
+        logger.debug(f"[绘图] URL 下载成功 url={url} size={len(data)}")
+        return data
+    except Exception as e:
+        logger.warning(f"[绘图] URL 下载失败 ({url}): {type(e).__name__}: {e}")
+        return None
 
-    file_ref = data.get("file") or data.get("url")
-    if file_ref:
+
+async def _fetch_image_bytes(bot: Bot, seg) -> bytes | None:
+    """获取垫图原始字节。优先级：base64 → url → get_image。"""
+    data = seg.data or {}
+    logger.debug(
+        f"[绘图] 垫图 segment.data keys={sorted(data.keys())} "
+        f"has_base64={bool(data.get('base64'))} has_url={bool(data.get('url'))} has_file={bool(data.get('file'))}"
+    )
+
+    if data.get("base64"):
         try:
-            resp = await bot.call_api("get_image", file=file_ref)
-            b64 = resp.get("base64") if isinstance(resp, dict) else None
-            if b64:
-                return base64.b64decode(b64)
+            decoded = base64.b64decode(data["base64"])
         except Exception as e:
-            logger.warning(f"[绘图] get_image 失败 ({file_ref}): {e}")
+            logger.warning(f"[绘图] base64 解码失败: {e}")
+            return None
+        logger.debug(f"[绘图] 走 base64 路径, decoded={len(decoded)} bytes")
+        return decoded
 
     if url := data.get("url"):
-        try:
-            async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT) as client:
-                return (await client.get(url)).content
-        except Exception as e:
-            logger.warning(f"[绘图] URL 下载失败 ({url}): {e}")
+        logger.debug(f"[绘图] 走 URL 路径: {url}")
+        return await _download_bytes(url)
+
+    file_ref = data.get("file")
+    if not file_ref:
+        logger.warning("[绘图] 未能获取垫图: segment 缺少 base64/url/file 任意字段")
+        return None
+
+    logger.debug(f"[绘图] 走 get_image 路径: file={file_ref}")
+    try:
+        resp = await bot.call_api("get_image", file=file_ref)
+    except Exception as e:
+        logger.debug(f"[绘图] get_image 不可用 ({file_ref}): {type(e).__name__}: {e}")
+        return None
+    keys_str = sorted(resp.keys()) if isinstance(resp, dict) else "-"
+    logger.debug(f"[绘图] get_image 返回类型={type(resp).__name__} content_keys={keys_str}")
+    if isinstance(resp, dict):
+        if resp.get("base64"):
+            return base64.b64decode(resp["base64"])
+        if resp.get("url"):
+            return await _download_bytes(resp["url"])
     return None
 
 
@@ -142,13 +170,18 @@ def _format_token_usage(usage: dict) -> str:
     return "、".join(parts) + " tokens" if parts else ""
 
 
-def _build_summary(used_model: str, duration_text: str, usage: dict, count: int) -> str:
-    parts = [f"⏱️ 耗时 {duration_text}"]
+def _build_summary(used_model: str, duration_text: str, usage: dict, count: int, mode: str) -> str:
+    mode_label = "文生图" if mode == "txt2img" else "图生图"
+    parts = [f"⏱️ 耗时 {duration_text}", f"🎯 {mode_label}"]
     if token_text := _format_token_usage(usage):
         parts.append(f"📊 消耗 {token_text}")
     parts.append(f"🖼️ {count} 张")
     parts.append(f"🧠 {used_model}")
     return " | ".join(parts)
+
+
+def _mode_label(mode: str) -> str:
+    return "文生图" if mode == "txt2img" else "图生图"
 
 
 async def _do_generate(prompt: str, image_b64: str | None) -> tuple[list[str | Path], dict]:
@@ -161,6 +194,9 @@ async def _do_generate(prompt: str, image_b64: str | None) -> tuple[list[str | P
 async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     global _pending
 
+    user_id = event.get_user_id()
+    logger.debug(f"[绘图] handle_draw 入口 user={user_id} arp.main_args={arp.main_args}")
+
     if not (passed := check_whitelist_blacklist(event))[0]:
         metrics.hit("blacklist")
         return await _finish_with(f"❌ 访问被拒绝：{passed[1]}")
@@ -168,13 +204,14 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     prompt = (arp.main_args.get("prompt", "") or "").strip() or unimsg.extract_plain_text().strip()
     if not prompt:
         return await _finish_with("❌ 请提供绘图提示词\n例如: /绘图 一只可爱的小猫")
+    logger.debug(f"[绘图] prompt={prompt!r} len={len(prompt)}")
 
     cfg = get_config()
-    user_id = event.get_user_id()
     is_superuser = user_id in set(get_driver().config.superusers)
+    logger.debug(f"[绘图] cfg.model={cfg['model']} backend={cfg['backend']} super={is_superuser}")
 
     if not is_superuser:
-        ok, remain = _check_cooldown(user_id, cfg.get("user_cooldown", 60))
+        ok, remain = _check_cooldown(user_id, cfg["user_cooldown"])
         if not ok:
             metrics.hit("cooldown")
             mins, secs = divmod(remain, 60)
@@ -184,28 +221,25 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
         metrics.hit("nsfw_blocked")
         return await _finish_with(f"❌ 检测到敏感词「{hit[1]}」")
 
-    if not (ok_len := check_prompt_length(prompt, cfg["model"], cfg.get("prompt_max_chars", 4000)))[0]:
-        return await _finish_with(f"❌ 提示词过长（{ok_len[1]} 字符），上限 {cfg.get('prompt_max_chars', 4000)}")
-
-    used_model = (arp.options.get("model", {}) or {}).get("model") or cfg.get("model", "unknown")
-    _pending += 1
-    queue_hint = f"（前面还有 {_pending - 1} 个请求）..." if _pending > 1 else "..."
-    await UniMessage.text(f"🎨 正在使用 {used_model} 生成中{queue_hint}").send()
-
     image_b64: str | None = None
-    if seg := _find_image_segment(event, unimsg):
+    seg = _find_image_segment(event, unimsg)
+    if seg:
         image_bytes = await _fetch_image_bytes(bot, seg)
         if image_bytes is None:
-            _pending -= 1
             return await _finish_with("❌ 获取垫图失败，请重试或联系管理员")
         image_b64 = base64.b64encode(image_bytes).decode()
-        logger.info(f"[绘图] 垫图就绪: {len(image_bytes)} bytes")
+        logger.info(f"[绘图] 垫图就绪: {len(image_bytes)} bytes b64_len={len(image_b64)}")
 
     mode = "img2img" if image_b64 else "txt2img"
     metrics.hit(mode)
+
+    used_model = (arp.options.get("model", {}) or {}).get("model") or cfg["model"]
+    _pending += 1
+    queue_hint = f"（前面还有 {_pending - 1} 个请求）..." if _pending > 1 else "..."
+    await UniMessage.text(f"🎨 {_mode_label(mode)} | 正在使用 {used_model} 生成中{queue_hint}").send()
     logger.info(f"[绘图] 请求: prompt={prompt!r}, model={used_model}, mode={mode}")
 
-    concurrent = cfg.get("concurrent", False)
+    concurrent = cfg["concurrent"]
     start_ts = time.perf_counter()
     results: list[str | Path] = []
     usage_info: dict = {"model": used_model}
@@ -238,12 +272,12 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     try:
         for r in results:
             await _send_single(r)
-        await UniMessage.text(_build_summary(used_model, duration_text, usage_info, len(results))).send()
+        await UniMessage.text(_build_summary(used_model, duration_text, usage_info, len(results), mode)).send()
     except Exception as e:
         logger.exception(f"[绘图] 发送失败: {e}")
         await _finish_with(f"❌ 发送失败: {results}")
     finally:
-        if not cfg.get("cache_enabled", False):
+        if not cfg["cache_enabled"]:
             for r in results:
                 if isinstance(r, Path):
                     try:
@@ -256,7 +290,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
 
 @clear_cache_command.handle()
 async def handle_clear_cache():
-    if not get_config().get("cache_enabled", False):
+    if not get_config()["cache_enabled"]:
         return await _finish_with("ℹ️ 缓存功能未启用（draw_cache_enabled=False），无需清理")
     deleted, remaining = cleanup_cache()
     return await _finish_with(f"🧹 清理完成：删除 {deleted} 个，剩余 {remaining} 个")
