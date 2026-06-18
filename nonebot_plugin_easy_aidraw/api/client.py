@@ -9,8 +9,9 @@ import httpx
 from nonebot.log import logger
 
 from ..models import ImageData, ImageResponse, Usage
+from .backends import needs_api_key
 from .cache import b64_to_path
-from .config_loader import get_config, needs_api_key
+from .config_loader import get_config
 from .errors import sanitize_error
 
 __all__ = ["edit_image", "generate_image"]
