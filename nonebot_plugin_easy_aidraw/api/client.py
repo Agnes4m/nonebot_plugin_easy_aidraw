@@ -17,9 +17,8 @@ __all__ = ["edit_image", "generate_image"]
 
 
 def _client_kwargs(cfg: dict) -> dict:
-    kw: dict = {"timeout": cfg["timeout"]}
-    proxy = cfg.get("proxy")
-    if proxy:
+    kw: dict = {"timeout": cfg["timeout"], "trust_env": False}
+    if proxy := cfg.get("proxy"):
         kw["proxy"] = proxy
     return kw
 
@@ -30,7 +29,7 @@ def _safe_headers(headers: dict) -> dict:
 
 def _sanitize_for_log(obj):
     if isinstance(obj, dict):
-        return {k: ("<bytes>" if k in ("b64_json",) else _sanitize_for_log(v)) for k, v in obj.items()}
+        return {k: ("<bytes>" if k == "b64_json" else _sanitize_for_log(v)) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_sanitize_for_log(i) for i in obj]
     return obj
@@ -65,8 +64,7 @@ def _results_from(resp: ImageResponse) -> list[str | Path]:
     results: list[str | Path] = []
     for img in _extract_all(resp):
         if img.b64_json:
-            p, _ = b64_to_path(img.b64_json)
-            results.append(p)
+            results.append(b64_to_path(img.b64_json)[0])
         elif img.url:
             results.append(img.url)
     if not results:
@@ -74,12 +72,8 @@ def _results_from(resp: ImageResponse) -> list[str | Path]:
     return results
 
 
-async def _post_json(client: httpx.AsyncClient, url: str, headers: dict, payload: dict) -> ImageResponse:
-    logger.debug(f"[绘图] POST {url}")
-    logger.debug(f"[绘图] 请求体: {payload}")
-    logger.debug(f"[绘图] headers: {_safe_headers(headers)}")
+def _parse_image_response(response: httpx.Response, url: str) -> ImageResponse:
     try:
-        response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
     except httpx.TimeoutException as e:
         logger.warning(f"[绘图] 上游超时 url={url}: {type(e).__name__}: {e}")
@@ -94,6 +88,13 @@ async def _post_json(client: httpx.AsyncClient, url: str, headers: dict, payload
     resp = ImageResponse.model_validate(response.json())
     logger.info(f"[绘图] 响应: {_sanitize_for_log(resp.model_dump(exclude_none=True))}")
     return resp
+
+
+async def _post_json(client: httpx.AsyncClient, url: str, headers: dict, payload: dict) -> ImageResponse:
+    logger.debug(f"[绘图] POST {url}")
+    logger.debug(f"[绘图] 请求体: {payload}")
+    logger.debug(f"[绘图] headers: {_safe_headers(headers)}")
+    return _parse_image_response(await client.post(url, headers=headers, json=payload), url)
 
 
 def _require_key(backend: str, api_key: str) -> None:
@@ -128,21 +129,8 @@ async def edit_image(prompt: str, image_b64: str) -> tuple[list[str | Path], dic
     logger.debug(f"[绘图] edit_image form_data={form_data} image_size={len(image_bytes_in)} url={cfg['api_url_edits']}")
     async with httpx.AsyncClient(**_client_kwargs(cfg)) as client:
         logger.info(f"[绘图] 请求: model={cfg['model']}, prompt_len={len(prompt)}, mode=img2img")
-        try:
-            response = await client.post(cfg["api_url_edits"], headers=headers, data=form_data, files=files)
-            response.raise_for_status()
-        except httpx.TimeoutException as e:
-            logger.warning(f"[绘图] 上游超时 url={cfg['api_url_edits']}: {type(e).__name__}: {e}")
-            raise RuntimeError("⏰ 上游服务超时，请稍后重试") from e
-        except httpx.HTTPStatusError as e:
-            body = (e.response.text or "").strip()
-            logger.warning(f"[绘图] 上游 HTTP {e.response.status_code} url={cfg['api_url_edits']} body={body[:500]}")
-            raise RuntimeError(sanitize_error(e.response.status_code, body)) from e
-        except httpx.HTTPError as e:
-            logger.warning(f"[绘图] 上游网络错误 url={cfg['api_url_edits']}: {type(e).__name__}: {e}")
-            raise RuntimeError("🌐 网络错误，请稍后重试") from e
-        resp = ImageResponse.model_validate(response.json())
-        logger.info(f"[绘图] 响应: {_sanitize_for_log(resp.model_dump(exclude_none=True))}")
+        response = await client.post(cfg["api_url_edits"], headers=headers, data=form_data, files=files)
+        resp = _parse_image_response(response, cfg["api_url_edits"])
 
     results = _results_from(resp)
     logger.info(f"[绘图] 生成成功: 共 {len(results)} 张")

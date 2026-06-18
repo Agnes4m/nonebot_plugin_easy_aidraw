@@ -31,11 +31,12 @@ class EnvConfig(BaseModel):
 
 
 from nonebot import require
-from nonebot.plugin import PluginMetadata, inherit_supported_adapters
+
 require("nonebot_plugin_alconna")
 
-from .handler import clear_cache_command, draw_command
+from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
+from .handler import clear_cache_command, draw_command
 
 __plugin_meta__ = PluginMetadata(
     name="AI绘图",

@@ -67,7 +67,7 @@ async def _send_single(result: str | Path) -> None:
         await UniMessage.image(url=result).send()
     except Exception as e:
         logger.warning(f"[绘图] URL 发送失败，回退下载转 base64: {e}")
-        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, trust_env=False) as client:
             data = (await client.get(result)).content
         await UniMessage.image(url=_to_data_uri(data)).send()
 
@@ -91,7 +91,7 @@ def _find_image_segment(event: Event, unimsg: UniMsg):
 
 async def _download_bytes(url: str) -> bytes | None:
     try:
-        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, trust_env=False) as client:
             data = (await client.get(url)).content
         logger.debug(f"[绘图] URL 下载成功 url={url} size={len(data)}")
         return data
@@ -101,7 +101,7 @@ async def _download_bytes(url: str) -> bytes | None:
 
 
 async def _fetch_image_bytes(bot: Bot, seg) -> bytes | None:
-    """获取垫图原始字节。优先级：base64 → url → get_image。"""
+    """垫图获取：base64 → url → get_image。"""
     data = seg.data or {}
     logger.debug(
         f"[绘图] 垫图 segment.data keys={sorted(data.keys())} "
@@ -132,13 +132,13 @@ async def _fetch_image_bytes(bot: Bot, seg) -> bytes | None:
     except Exception as e:
         logger.debug(f"[绘图] get_image 不可用 ({file_ref}): {type(e).__name__}: {e}")
         return None
-    keys_str = sorted(resp.keys()) if isinstance(resp, dict) else "-"
-    logger.debug(f"[绘图] get_image 返回类型={type(resp).__name__} content_keys={keys_str}")
-    if isinstance(resp, dict):
-        if resp.get("base64"):
-            return base64.b64decode(resp["base64"])
-        if resp.get("url"):
-            return await _download_bytes(resp["url"])
+    if not isinstance(resp, dict):
+        return None
+    logger.debug(f"[绘图] get_image 返回 content_keys={sorted(resp.keys())}")
+    if resp.get("base64"):
+        return base64.b64decode(resp["base64"])
+    if resp.get("url"):
+        return await _download_bytes(resp["url"])
     return None
 
 
@@ -178,10 +178,6 @@ def _build_summary(used_model: str, duration_text: str, usage: dict, count: int,
     parts.append(f"🖼️ {count} 张")
     parts.append(f"🧠 {used_model}")
     return " | ".join(parts)
-
-
-def _mode_label(mode: str) -> str:
-    return "文生图" if mode == "txt2img" else "图生图"
 
 
 async def _do_generate(prompt: str, image_b64: str | None) -> tuple[list[str | Path], dict]:
@@ -236,10 +232,10 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     used_model = (arp.options.get("model", {}) or {}).get("model") or cfg["model"]
     _pending += 1
     queue_hint = f"（前面还有 {_pending - 1} 个请求）..." if _pending > 1 else "..."
-    await UniMessage.text(f"🎨 {_mode_label(mode)} | 正在使用 {used_model} 生成中{queue_hint}").send()
+    mode_label = "文生图" if mode == "txt2img" else "图生图"
+    await UniMessage.text(f"🎨 {mode_label} | 正在使用 {used_model} 生成中{queue_hint}").send()
     logger.info(f"[绘图] 请求: prompt={prompt!r}, model={used_model}, mode={mode}")
 
-    concurrent = cfg["concurrent"]
     start_ts = time.perf_counter()
     results: list[str | Path] = []
     usage_info: dict = {"model": used_model}
@@ -250,7 +246,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
             _user_last_request[user_id] = time.time()
             return await _do_generate(prompt, image_b64)
 
-        if concurrent:
+        if cfg["concurrent"]:
             results, usage_info = await _call()
         else:
             async with _draw_lock:
@@ -265,9 +261,9 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     if error_msg:
         return await _finish_with(f"❌ 生成失败: {error_msg}")
 
+    metrics.hit("success")
     duration = time.perf_counter() - start_ts
     duration_text = _format_duration(duration)
-    metrics.hit("success")
 
     try:
         for r in results:

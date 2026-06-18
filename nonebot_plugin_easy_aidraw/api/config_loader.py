@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING
 
 from nonebot import get_driver
 
-from .backends import BACKEND_DEFAULTS, get_endpoint, needs_api_key, resolve_edit_url
+from .backends import BACKEND_DEFAULTS, get_endpoint, resolve_edit_url
 from .filters import match_nsfw
 
 if TYPE_CHECKING:
     from nonebot.adapters import Event
 
-__all__ = ["check_nsfw", "check_whitelist_blacklist", "get_config", "needs_api_key", "reset_config_cache"]
+__all__ = ["check_nsfw", "check_whitelist_blacklist", "get_config", "reset_config_cache"]
 
 _config: dict | None = None
 

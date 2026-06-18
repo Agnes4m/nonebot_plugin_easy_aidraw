@@ -16,6 +16,15 @@ from .config_loader import get_config
 __all__ = ["b64_to_path", "cleanup_cache", "temp_b64_path"]
 
 _CACHE_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp", ".tmp"})
+_DEFAULT_CACHE_DIR = "data/nonebot_plugin_easy_aidraw"
+
+
+def _cache_root() -> Path:
+    raw = get_config().get("cache_dir")
+    if not raw or not isinstance(raw, str):
+        logger.warning(f"[绘图] cache_dir 非法 ({raw!r}), 回退默认: {_DEFAULT_CACHE_DIR}")
+        raw = _DEFAULT_CACHE_DIR
+    return Path(raw)
 
 
 def _decode(b64: str) -> bytes:
@@ -24,8 +33,7 @@ def _decode(b64: str) -> bytes:
 
 @contextmanager
 def temp_b64_path(b64: str):
-    cfg = get_config()
-    path = Path(cfg["cache_dir"]) / f".tmp-{uuid.uuid4().hex}.png"
+    path = _cache_root() / f".tmp-{uuid.uuid4().hex}.png"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(_decode(b64))
     try:
@@ -37,30 +45,26 @@ def temp_b64_path(b64: str):
             logger.warning(f"[绘图] 临时文件清理失败 {path}: {e}")
 
 
-def _write_temp(b64: str) -> tuple[Path, bool]:
-    cfg = get_config()
-    path = Path(cfg["cache_dir"]) / f".tmp-{uuid.uuid4().hex}.png"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(_decode(b64))
-    return path, True
-
-
 def b64_to_path(b64: str) -> tuple[Path, bool]:
     """返回 (path, is_temporary)。is_temporary=True 时调用方负责删除。"""
     cfg = get_config()
-    if cfg["cache_enabled"]:
-        cache_dir = Path(cfg["cache_dir"]) / date.today().isoformat()
+    root = _cache_root()
+    if cfg.get("cache_enabled"):
+        cache_dir = root / date.today().isoformat()
         cache_dir.mkdir(parents=True, exist_ok=True)
         path = cache_dir / f"{uuid.uuid4().hex}.png"
         path.write_bytes(_decode(b64))
         logger.info(f"[绘图] 已保存缓存: {path}")
         return path, False
-    return _write_temp(b64)
+    path = root / f".tmp-{uuid.uuid4().hex}.png"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(_decode(b64))
+    return path, True
 
 
 def cleanup_cache(ttl: int | None = None) -> tuple[int, int]:
     cfg = get_config()
-    cache_root = Path(cfg["cache_dir"])
+    cache_root = _cache_root()
     if not cache_root.exists():
         return 0, 0
     threshold = time.time() - (ttl if ttl is not None else cfg["cache_ttl"])
