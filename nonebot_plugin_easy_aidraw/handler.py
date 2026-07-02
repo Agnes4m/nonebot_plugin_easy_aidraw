@@ -180,10 +180,12 @@ def _build_summary(used_model: str, duration_text: str, usage: dict, count: int,
     return " | ".join(parts)
 
 
-async def _do_generate(prompt: str, image_b64: str | None) -> tuple[list[str | Path], dict]:
+async def _do_generate(
+    prompt: str, image_b64: str | None, *, size: str | None = None, n: int | None = None
+) -> tuple[list[str | Path], dict]:
     if image_b64:
-        return await edit_image(prompt, image_b64)
-    return await generate_image(prompt)
+        return await edit_image(prompt, image_b64, size=size, n=n)
+    return await generate_image(prompt, size=size, n=n)
 
 
 @draw_command.handle()
@@ -204,10 +206,10 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
 
     cfg = get_config()
     is_superuser = user_id in set(get_driver().config.superusers)
-    logger.debug(f"[绘图] cfg.model={cfg['model']} backend={cfg['backend']} super={is_superuser}")
+    logger.debug(f"[绘图] cfg.model={cfg.model} backend={cfg.draw_backend} super={is_superuser}")
 
     if not is_superuser:
-        ok, remain = _check_cooldown(user_id, cfg["user_cooldown"])
+        ok, remain = _check_cooldown(user_id, cfg.draw_user_cooldown)
         if not ok:
             metrics.hit("cooldown")
             mins, secs = divmod(remain, 60)
@@ -229,7 +231,9 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     mode = "img2img" if image_b64 else "txt2img"
     metrics.hit(mode)
 
-    used_model = (arp.options.get("model", {}) or {}).get("model") or cfg["model"]
+    used_model = (arp.options.get("model", {}) or {}).get("model") or cfg.model
+    size_opt = (arp.options.get("size", {}) or {}).get("size")
+    count_opt = (arp.options.get("n", {}) or {}).get("n")
     _pending += 1
     queue_hint = f"（前面还有 {_pending - 1} 个请求）..." if _pending > 1 else "..."
     mode_label = "文生图" if mode == "txt2img" else "图生图"
@@ -244,9 +248,9 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
 
         async def _call():
             _user_last_request[user_id] = time.time()
-            return await _do_generate(prompt, image_b64)
+            return await _do_generate(prompt, image_b64, size=size_opt, n=count_opt)
 
-        if cfg["concurrent"]:
+        if cfg.draw_concurrent:
             results, usage_info = await _call()
         else:
             async with _draw_lock:
@@ -273,7 +277,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
         logger.exception(f"[绘图] 发送失败: {e}")
         await _finish_with(f"❌ 发送失败: {results}")
     finally:
-        if not cfg["cache_enabled"]:
+        if not cfg.draw_cache_enabled:
             for r in results:
                 if isinstance(r, Path):
                     try:
@@ -286,7 +290,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
 
 @clear_cache_command.handle()
 async def handle_clear_cache():
-    if not get_config()["cache_enabled"]:
+    if not get_config().draw_cache_enabled:
         return await _finish_with("ℹ️ 缓存功能未启用（draw_cache_enabled=False），无需清理")
     deleted, remaining = cleanup_cache()
     return await _finish_with(f"🧹 清理完成：删除 {deleted} 个，剩余 {remaining} 个")

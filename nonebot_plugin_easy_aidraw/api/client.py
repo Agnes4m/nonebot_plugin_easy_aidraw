@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 from nonebot.log import logger
 
+from ..env_config import EnvConfig
 from ..models import ImageData, ImageResponse, Usage
 from .backends import needs_api_key
 from .cache import b64_to_path
@@ -17,10 +18,10 @@ from .errors import sanitize_error
 __all__ = ["edit_image", "generate_image"]
 
 
-def _client_kwargs(cfg: dict) -> dict:
-    kw: dict = {"timeout": cfg["timeout"], "trust_env": False}
-    if proxy := cfg.get("proxy"):
-        kw["proxy"] = proxy
+def _client_kwargs(cfg: EnvConfig) -> dict:
+    kw: dict = {"timeout": cfg.draw_timeout, "trust_env": False}
+    if cfg.draw_proxy:
+        kw["proxy"] = cfg.draw_proxy
     return kw
 
 
@@ -46,11 +47,11 @@ def _build_usage(resp: ImageResponse, default_model: str) -> dict:
     }
 
 
-def _json_payload(cfg: dict, prompt: str) -> dict:
-    payload: dict = {"model": cfg["model"], "prompt": prompt, "size": cfg["default_size"]}
-    if cfg["backend"] == "openai":
-        payload["n"] = cfg.get("n") or 1
-        payload["quality"] = cfg.get("quality") or "standard"
+def _json_payload(cfg: EnvConfig, prompt: str, *, size: str | None = None, n: int | None = None) -> dict:
+    payload: dict = {"model": cfg.model, "prompt": prompt, "size": size or cfg.draw_default_size}
+    if cfg.draw_backend == "openai":
+        payload["n"] = n or cfg.draw_n or 1
+        payload["quality"] = cfg.draw_quality or "standard"
     return payload
 
 
@@ -103,36 +104,42 @@ def _require_key(backend: str, api_key: str) -> None:
         raise ValueError("未配置 DRAW_API_KEY")
 
 
-async def generate_image(prompt: str) -> tuple[list[str | Path], dict]:
+async def generate_image(
+    prompt: str, *, size: str | None = None, n: int | None = None
+) -> tuple[list[str | Path], dict]:
     cfg = get_config()
-    _require_key(cfg["backend"], cfg["api_key"])
+    _require_key(cfg.draw_backend, cfg.draw_api_key)
     async with httpx.AsyncClient(**_client_kwargs(cfg)) as client:
-        logger.info(f"[绘图] 请求: model={cfg['model']}, prompt_len={len(prompt)}, mode=txt2img")
-        resp = await _post_json(client, cfg["api_url"], cfg["headers"], _json_payload(cfg, prompt))
+        logger.info(f"[绘图] 请求: model={cfg.model}, prompt_len={len(prompt)}, mode=txt2img")
+        resp = await _post_json(client, cfg.api_url, cfg.headers, _json_payload(cfg, prompt, size=size, n=n))
     results = _results_from(resp)
     logger.info(f"[绘图] 生成成功: 共 {len(results)} 张")
-    return results, _build_usage(resp, cfg["model"])
+    return results, _build_usage(resp, cfg.model)
 
 
-async def edit_image(prompt: str, image_b64: str) -> tuple[list[str | Path], dict]:
+async def edit_image(
+    prompt: str, image_b64: str, *, size: str | None = None, n: int | None = None
+) -> tuple[list[str | Path], dict]:
     cfg = get_config()
-    _require_key(cfg["backend"], cfg["api_key"])
+    _require_key(cfg.draw_backend, cfg.draw_api_key)
 
-    form_data: dict = {"model": cfg["model"], "prompt": prompt, "n": str(cfg.get("n") or 1)}
-    if cfg["backend"] == "openai":
-        form_data["quality"] = cfg.get("quality") or "standard"
+    form_data: dict = {"model": cfg.model, "prompt": prompt, "n": str(n or cfg.draw_n or 1)}
+    if size:
+        form_data["size"] = size
+    if cfg.draw_backend == "openai":
+        form_data["quality"] = cfg.draw_quality or "standard"
 
     image_bytes_in = base64.b64decode(image_b64)
     files = {"image": ("image.png", image_bytes_in, "image/png")}
-    auth = cfg["headers"].get("Authorization")
+    auth = cfg.headers.get("Authorization")
     headers = {"Authorization": auth} if auth else {}
 
-    logger.debug(f"[绘图] edit_image form_data={form_data} image_size={len(image_bytes_in)} url={cfg['api_url_edits']}")
+    logger.debug(f"[绘图] edit_image form_data={form_data} image_size={len(image_bytes_in)} url={cfg.api_url_edits}")
     async with httpx.AsyncClient(**_client_kwargs(cfg)) as client:
-        logger.info(f"[绘图] 请求: model={cfg['model']}, prompt_len={len(prompt)}, mode=img2img")
-        response = await client.post(cfg["api_url_edits"], headers=headers, data=form_data, files=files)
-        resp = _parse_image_response(response, cfg["api_url_edits"])
+        logger.info(f"[绘图] 请求: model={cfg.model}, prompt_len={len(prompt)}, mode=img2img")
+        response = await client.post(cfg.api_url_edits, headers=headers, data=form_data, files=files)
+        resp = _parse_image_response(response, cfg.api_url_edits)
 
     results = _results_from(resp)
     logger.info(f"[绘图] 生成成功: 共 {len(results)} 张")
-    return results, _build_usage(resp, cfg["model"])
+    return results, _build_usage(resp, cfg.model)

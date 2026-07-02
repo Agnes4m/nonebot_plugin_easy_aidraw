@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 BACKEND_DEFAULTS: dict[str, dict[str, str]] = {
     "openai": {
         "base": "https://api.openai.com/v1",
@@ -28,13 +26,6 @@ BACKEND_DEFAULTS: dict[str, dict[str, str]] = {
 KEY_NEEDED_BACKENDS = frozenset({"openai", "gemini"})
 
 _OPENAI_SUFFIX = {"txt2img": "/images/generations", "img2img": "/images/edits"}
-
-
-@dataclass(frozen=True)
-class Endpoints:
-    txt2img: str
-    img2img: str
-    backend: str
 
 
 def _normalize_base(url: str) -> str:

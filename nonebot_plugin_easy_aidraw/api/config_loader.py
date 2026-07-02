@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from nonebot import get_driver
 
-from .backends import BACKEND_DEFAULTS, get_endpoint, resolve_edit_url
+from ..env_config import EnvConfig
 from .filters import match_nsfw
 
 if TYPE_CHECKING:
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 __all__ = ["check_nsfw", "check_whitelist_blacklist", "get_config", "reset_config_cache"]
 
-_config: dict | None = None
+_config: EnvConfig | None = None
 
 
 def reset_config_cache() -> None:
@@ -22,62 +22,26 @@ def reset_config_cache() -> None:
     _config = None
 
 
-def get_config() -> dict:
+def get_config() -> EnvConfig:
     global _config
     if _config is not None:
         return _config
-
-    cfg = dict(get_driver().config)
-    backend = cfg.get("draw_backend", "")
-
-    txt2img_url = get_endpoint(backend, cfg.get("draw_api_url", ""), "txt2img")
-    edits_url = resolve_edit_url(backend, txt2img_url, cfg.get("draw_api_url_edits", ""))
-
-    api_key = cfg.get("draw_api_key", "")
-    headers = {"Content-Type": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    default_model = cfg.get("draw_model") or BACKEND_DEFAULTS.get(backend, {}).get("default_model", "flux")
-
-    _config = {
-        "api_url": txt2img_url,
-        "api_url_edits": edits_url,
-        "api_key": api_key,
-        "model": default_model,
-        "backend": backend,
-        "default_size": cfg.get("draw_default_size"),
-        "timeout": cfg.get("draw_timeout"),
-        "proxy": cfg.get("draw_proxy"),
-        "nsfw_enabled": cfg.get("draw_nsfw_enabled"),
-        "nsfw_keywords": cfg.get("draw_nsfw_keywords", []),
-        "whitelist_mode": cfg.get("draw_whitelist_mode"),
-        "whitelist": cfg.get("draw_whitelist", []),
-        "blacklist": cfg.get("draw_blacklist", []),
-        "quality": cfg.get("draw_quality"),
-        "n": cfg.get("draw_n"),
-        "user_cooldown": cfg.get("draw_user_cooldown"),
-        "concurrent": cfg.get("draw_concurrent"),
-        "cache_enabled": cfg.get("draw_cache_enabled"),
-        "cache_dir": cfg.get("draw_cache_dir"),
-        "cache_ttl": cfg.get("draw_cache_ttl"),
-        "headers": headers,
-    }
+    _config = EnvConfig(**dict(get_driver().config))
     return _config
 
 
 def check_whitelist_blacklist(event: Event) -> tuple[bool, str]:
     cfg = get_config()
     user_id = event.get_user_id()
-    if cfg["whitelist_mode"]:
-        return (user_id in cfg["whitelist"], "不在白名单中")
-    return (user_id not in cfg["blacklist"], "在黑名单中")
+    if cfg.draw_whitelist_mode:
+        return (user_id in cfg.draw_whitelist, "不在白名单中")
+    return (user_id not in cfg.draw_blacklist, "在黑名单中")
 
 
 def check_nsfw(prompt: str) -> tuple[bool, str | None]:
     cfg = get_config()
     return match_nsfw(
         prompt,
-        keywords=cfg.get("nsfw_keywords", []),
-        enabled=cfg.get("nsfw_enabled", False),
+        keywords=cfg.draw_nsfw_keywords,
+        enabled=cfg.draw_nsfw_enabled,
     )

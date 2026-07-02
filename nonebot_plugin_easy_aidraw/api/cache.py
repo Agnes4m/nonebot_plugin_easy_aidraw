@@ -10,21 +10,17 @@ import time
 import uuid
 
 from nonebot.log import logger
+from nonebot_plugin_localstore import get_plugin_cache_dir
 
 from .config_loader import get_config
 
 __all__ = ["b64_to_path", "cleanup_cache", "temp_b64_path"]
 
 _CACHE_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp", ".tmp"})
-_DEFAULT_CACHE_DIR = "data/nonebot_plugin_easy_aidraw"
 
 
 def _cache_root() -> Path:
-    raw = get_config().get("cache_dir")
-    if not raw or not isinstance(raw, str):
-        logger.warning(f"[绘图] cache_dir 非法 ({raw!r}), 回退默认: {_DEFAULT_CACHE_DIR}")
-        raw = _DEFAULT_CACHE_DIR
-    return Path(raw)
+    return get_plugin_cache_dir()
 
 
 def _decode(b64: str) -> bytes:
@@ -49,7 +45,7 @@ def b64_to_path(b64: str) -> tuple[Path, bool]:
     """返回 (path, is_temporary)。is_temporary=True 时调用方负责删除。"""
     cfg = get_config()
     root = _cache_root()
-    if cfg.get("cache_enabled"):
+    if cfg.draw_cache_enabled:
         cache_dir = root / date.today().isoformat()
         cache_dir.mkdir(parents=True, exist_ok=True)
         path = cache_dir / f"{uuid.uuid4().hex}.png"
@@ -67,7 +63,7 @@ def cleanup_cache(ttl: int | None = None) -> tuple[int, int]:
     cache_root = _cache_root()
     if not cache_root.exists():
         return 0, 0
-    threshold = time.time() - (ttl if ttl is not None else cfg["cache_ttl"])
+    threshold = time.time() - (ttl if ttl is not None else cfg.draw_cache_ttl)
     deleted = remaining = 0
     for p in cache_root.rglob("*"):
         if not p.is_file() or p.suffix.lower() not in _CACHE_EXT:
