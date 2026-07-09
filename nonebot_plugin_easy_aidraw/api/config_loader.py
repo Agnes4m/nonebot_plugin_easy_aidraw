@@ -1,5 +1,3 @@
-"""env 配置加载、白/黑名单、敏感词。"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

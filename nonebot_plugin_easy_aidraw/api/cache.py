@@ -1,5 +1,3 @@
-"""b64 落盘与缓存清理。"""
-
 from __future__ import annotations
 
 import base64
@@ -42,7 +40,6 @@ def temp_b64_path(b64: str):
 
 
 def b64_to_path(b64: str) -> tuple[Path, bool]:
-    """返回 (path, is_temporary)。is_temporary=True 时调用方负责删除。"""
     cfg = get_config()
     root = _cache_root()
     if cfg.draw_cache_enabled:

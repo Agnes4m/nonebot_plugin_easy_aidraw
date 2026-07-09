@@ -1,5 +1,3 @@
-"""错误信息脱敏：白名单用户提示，其余统一文案。"""
-
 from __future__ import annotations
 
 from json import JSONDecodeError, JSONDecoder

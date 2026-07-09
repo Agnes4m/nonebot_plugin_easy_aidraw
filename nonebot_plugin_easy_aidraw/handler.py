@@ -1,5 +1,3 @@
-"""命令注册与业务处理"""
-
 from __future__ import annotations
 
 import asyncio
@@ -101,7 +99,6 @@ async def _download_bytes(url: str) -> bytes | None:
 
 
 async def _fetch_image_bytes(bot: Bot, seg) -> bytes | None:
-    """垫图获取：base64 → url → get_image。"""
     data = seg.data or {}
     logger.debug(
         f"[绘图] 垫图 segment.data keys={sorted(data.keys())} "

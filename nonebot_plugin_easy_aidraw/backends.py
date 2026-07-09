@@ -1,5 +1,3 @@
-"""后端默认端点与 URL 解析。"""
-
 from __future__ import annotations
 
 BACKEND_DEFAULTS: dict[str, dict[str, str]] = {

@@ -1,5 +1,3 @@
-"""HTTP 客户端：OpenAI 协议文生图 / 图生图。"""
-
 from __future__ import annotations
 
 import base64
@@ -8,9 +6,9 @@ from pathlib import Path
 import httpx
 from nonebot.log import logger
 
+from ..backends import needs_api_key
 from ..env_config import EnvConfig
 from ..models import ImageData, ImageResponse, Usage
-from .backends import needs_api_key
 from .cache import b64_to_path
 from .config_loader import get_config
 from .errors import sanitize_error
@@ -48,7 +46,9 @@ def _build_usage(resp: ImageResponse, default_model: str) -> dict:
 
 
 def _json_payload(cfg: EnvConfig, prompt: str, *, size: str | None = None, n: int | None = None) -> dict:
-    payload: dict = {"model": cfg.model, "prompt": prompt, "size": size or cfg.draw_default_size}
+    payload: dict = {"model": cfg.model, "prompt": prompt}
+    if size:
+        payload["size"] = size
     if cfg.draw_backend == "openai":
         payload["n"] = n or cfg.draw_n or 1
         payload["quality"] = cfg.draw_quality or "standard"

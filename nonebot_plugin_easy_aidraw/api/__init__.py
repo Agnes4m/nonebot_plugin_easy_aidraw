@@ -1,6 +1,4 @@
-"""API 子包：HTTP、缓存、过滤、后端。"""
-
-from .backends import get_endpoint, resolve_edit_url
+from ..backends import get_endpoint, resolve_edit_url
 from .cache import b64_to_path, cleanup_cache
 from .client import edit_image, generate_image
 from .config_loader import check_nsfw, check_whitelist_blacklist, get_config, reset_config_cache

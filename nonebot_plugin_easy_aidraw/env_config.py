@@ -1,8 +1,6 @@
-"""pydantic 配置模型"""
-
 from pydantic import BaseModel, ConfigDict
 
-from .api.backends import BACKEND_DEFAULTS, get_endpoint, resolve_edit_url
+from .backends import BACKEND_DEFAULTS, get_endpoint, resolve_edit_url
 
 
 class EnvConfig(BaseModel):

@@ -7,7 +7,7 @@
 
 <div align="center">
 
-# nonebot_plugin_easy_aidraw 0.2.5
+# nonebot_plugin_easy_aidraw 0.3.1
 
 _✨NoneBot & AI 绘图 插件 ✨_
 

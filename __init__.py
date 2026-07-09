@@ -1,5 +1,3 @@
-"""nonebot_plugin_aidraw - 顶层入口"""
-
 from pathlib import Path
 
 from nonebot import load_plugins

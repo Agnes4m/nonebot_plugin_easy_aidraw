@@ -1,5 +1,3 @@
-"""内置 Counter：把绘图调用指标写日志，零依赖。"""
-
 from __future__ import annotations
 
 from collections import Counter

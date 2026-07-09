@@ -1,5 +1,3 @@
-"""API 响应模型"""
-
 from pydantic import BaseModel, ConfigDict, Field
 
 

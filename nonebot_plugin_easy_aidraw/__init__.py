@@ -1,6 +1,4 @@
-"""nonebot_plugin_easy_aidraw"""
-
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 from nonebot import require
 
