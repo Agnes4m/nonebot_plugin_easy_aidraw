@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nonebot import get_driver
+from nonebot import get_plugin_config
 
 from ..env_config import EnvConfig
 from .filters import match_nsfw
@@ -10,22 +10,11 @@ from .filters import match_nsfw
 if TYPE_CHECKING:
     from nonebot.adapters import Event
 
-__all__ = ["check_nsfw", "check_whitelist_blacklist", "get_config", "reset_config_cache"]
-
-_config: EnvConfig | None = None
-
-
-def reset_config_cache() -> None:
-    global _config
-    _config = None
+__all__ = ["check_nsfw", "check_whitelist_blacklist", "get_config"]
 
 
 def get_config() -> EnvConfig:
-    global _config
-    if _config is not None:
-        return _config
-    _config = EnvConfig(**dict(get_driver().config))
-    return _config
+    return get_plugin_config(EnvConfig)
 
 
 def check_whitelist_blacklist(event: Event) -> tuple[bool, str]:

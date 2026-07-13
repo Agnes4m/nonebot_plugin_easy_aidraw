@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ImageData(BaseModel):
@@ -16,7 +16,8 @@ class Usage(BaseModel):
 
 
 class ImageResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    class Config:
+        extra = "allow"
 
     created: int | None = None
     data: list[ImageData] = Field(default_factory=list)

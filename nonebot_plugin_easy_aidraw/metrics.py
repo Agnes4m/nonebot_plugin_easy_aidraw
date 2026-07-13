@@ -5,38 +5,18 @@ from threading import Lock
 
 from nonebot.log import logger
 
-__all__ = ["metrics"]
-
 _lock = Lock()
 _counters: Counter[str] = Counter()
 
 
-def _inc(name: str, value: int = 1) -> None:
+def hit(event: str) -> None:
     with _lock:
-        _counters[name] += value
+        _counters[event] += 1
 
 
-def _snapshot() -> dict[str, int]:
+def dump() -> None:
     with _lock:
-        return dict(_counters)
-
-
-class Metrics:
-    @staticmethod
-    def hit(event: str) -> None:
-        _inc(event)
-
-    @staticmethod
-    def dump() -> None:
-        data = _snapshot()
-        if not data:
+        if not _counters:
             return
-        line = " | ".join(f"{k}={v}" for k, v in sorted(data.items()))
+        line = " | ".join(f"{k}={v}" for k, v in sorted(_counters.items()))
         logger.info(f"[绘图指标] {line}")
-
-    @staticmethod
-    def snapshot() -> dict[str, int]:
-        return _snapshot()
-
-
-metrics = Metrics()

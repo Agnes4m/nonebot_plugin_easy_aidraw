@@ -21,7 +21,7 @@ from .api import (
     generate_image,
     get_config,
 )
-from .metrics import metrics
+from .metrics import dump, hit
 
 __all__ = ["clear_cache_command", "draw_command"]
 
@@ -37,6 +37,7 @@ draw_alc = Alconna(
         description="AI绘图命令",
         example="/绘图 一只可爱的小猫\n/绘图 --model gpt-image-1.5 --size 1024x1792 风景",
     ),
+    separators=("", " "),
 )
 draw_command = on_alconna(
     draw_alc, auto_send_output=False, use_origin=False, skip_for_unmatch=False, response_self=True
@@ -193,7 +194,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     logger.debug(f"[绘图] handle_draw 入口 user={user_id} arp.main_args={arp.main_args}")
 
     if not (passed := check_whitelist_blacklist(event))[0]:
-        metrics.hit("blacklist")
+        hit("blacklist")
         return await _finish_with(f"❌ 访问被拒绝：{passed[1]}")
 
     prompt = (arp.main_args.get("prompt", "") or "").strip() or unimsg.extract_plain_text().strip()
@@ -208,13 +209,13 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     if not is_superuser:
         ok, remain = _check_cooldown(user_id, cfg.draw_user_cooldown)
         if not ok:
-            metrics.hit("cooldown")
+            hit("cooldown")
             mins, secs = divmod(remain, 60)
             return await _finish_with(f"⏳ 冷却中，还需等待 {mins}分{secs}秒")
 
-    if _is_group(event) and (hit := check_nsfw(prompt))[0]:
-        metrics.hit("nsfw_blocked")
-        return await _finish_with(f"❌ 检测到敏感词「{hit[1]}」")
+    if _is_group(event) and (nsfw_hit := check_nsfw(prompt))[0]:
+        hit("nsfw_blocked")
+        return await _finish_with(f"❌ 检测到敏感词「{nsfw_hit[1]}」")
 
     image_b64: str | None = None
     seg = _find_image_segment(event, unimsg)
@@ -226,7 +227,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
         logger.info(f"[绘图] 垫图就绪: {len(image_bytes)} bytes b64_len={len(image_b64)}")
 
     mode = "img2img" if image_b64 else "txt2img"
-    metrics.hit(mode)
+    hit(mode)
 
     used_model = (arp.options.get("model", {}) or {}).get("model") or cfg.model
     size_opt = (arp.options.get("size", {}) or {}).get("size")
@@ -237,13 +238,15 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     await UniMessage.text(f"🎨 {mode_label} | 正在使用 {used_model} 生成中{queue_hint}").send()
     logger.info(f"[绘图] 请求: prompt={prompt!r}, model={used_model}, mode={mode}")
 
-    start_ts = time.perf_counter()
+    start_ts = 0.0
     results: list[str | Path] = []
     usage_info: dict = {"model": used_model}
     error_msg = ""
     try:
 
         async def _call():
+            nonlocal start_ts
+            start_ts = time.perf_counter()
             _user_last_request[user_id] = time.time()
             return await _do_generate(prompt, image_b64, size=size_opt, n=count_opt)
 
@@ -254,15 +257,15 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
                 results, usage_info = await _call()
     except Exception as e:
         logger.exception(f"[绘图] 生成失败: {e}")
-        error_msg = str(e)
-        metrics.hit("failed")
+        error_msg = str(e) or f"{type(e).__name__}"
+        hit("failed")
     finally:
         _pending -= 1
 
     if error_msg:
         return await _finish_with(f"❌ 生成失败: {error_msg}")
 
-    metrics.hit("success")
+    hit("success")
     duration = time.perf_counter() - start_ts
     duration_text = _format_duration(duration)
 
@@ -282,7 +285,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
                     except OSError:
                         pass
 
-    metrics.dump()
+    dump()
 
 
 @clear_cache_command.handle()

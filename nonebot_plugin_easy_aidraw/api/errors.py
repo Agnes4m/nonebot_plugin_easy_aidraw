@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from json import JSONDecodeError, JSONDecoder
+import json
 
 __all__ = ["sanitize_error"]
 
@@ -11,15 +11,14 @@ _USER_FRIENDLY = {
     "billing_hard_limit_reached": "💰 已达账单上限，请联系管理员",
     "content_policy_violation": "🚫 提示词违反内容策略，请调整后重试",
 }
-_decoder = JSONDecoder()
 
 
 def _try_json(text: str) -> dict | None:
     if not text:
         return None
     try:
-        data = _decoder.decode(text)
-    except JSONDecodeError:
+        data = json.loads(text)
+    except json.JSONDecodeError:
         return None
     return data if isinstance(data, dict) else None
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from .backends import BACKEND_DEFAULTS, get_endpoint, resolve_edit_url
 
@@ -24,7 +24,9 @@ class EnvConfig(BaseModel):
     draw_cache_enabled: bool = False
     draw_cache_ttl: int = 86400
 
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+    class Config:
+        allow_population_by_field_name = True
+        extra = "ignore"
 
     @property
     def model(self) -> str:
