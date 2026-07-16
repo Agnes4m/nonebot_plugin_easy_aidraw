@@ -16,9 +16,6 @@ class Usage(BaseModel):
 
 
 class ImageResponse(BaseModel):
-    class Config:
-        extra = "allow"
-
     created: int | None = None
     data: list[ImageData] = Field(default_factory=list)
     background: str | None = None

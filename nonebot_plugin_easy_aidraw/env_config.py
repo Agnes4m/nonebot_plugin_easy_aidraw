@@ -24,10 +24,6 @@ class EnvConfig(BaseModel):
     draw_cache_enabled: bool = False
     draw_cache_ttl: int = 86400
 
-    class Config:
-        allow_population_by_field_name = True
-        extra = "ignore"
-
     @property
     def model(self) -> str:
         return self.draw_model or BACKEND_DEFAULTS.get(self.draw_backend, {}).get("default_model", "flux")
