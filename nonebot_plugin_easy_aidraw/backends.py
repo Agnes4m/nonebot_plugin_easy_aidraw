@@ -34,13 +34,16 @@ def _normalize_base(url: str) -> str:
     return url
 
 
+def _ensure_v1(base: str) -> str:
+    """如果 base 不以 /v1 结尾，自动补 /v1 以兼容 OpenAI 风格代理。"""
+    return base if base.endswith("/v1") else f"{base}/v1"
+
+
 def _resolve_endpoint(raw_url: str, backend: str, suffix: str) -> str:
     if raw_url:
         if not raw_url.startswith(("http://", "https://")):
             raise ValueError("draw_api_url 必须以 http:// 或 https:// 开头")
-        base = _normalize_base(raw_url.rstrip("/"))
-        if not base.endswith("/v1"):
-            raise ValueError("draw_api_url 必须以 /v1 结尾")
+        base = _ensure_v1(_normalize_base(raw_url.rstrip("/")))
         return f"{base}{suffix}"
     defaults = BACKEND_DEFAULTS.get(backend)
     if defaults:
@@ -50,7 +53,11 @@ def _resolve_endpoint(raw_url: str, backend: str, suffix: str) -> str:
 
 def get_endpoint(backend: str, url: str, kind: str) -> str:
     defaults = BACKEND_DEFAULTS.get(backend)
-    suffix = defaults.get(kind) if defaults else _OPENAI_SUFFIX.get(kind, f"/images/{kind}")
+    suffix: str
+    if defaults and (s := defaults.get(kind)):
+        suffix = s
+    else:
+        suffix = _OPENAI_SUFFIX.get(kind) or f"/images/{kind}"
     return _resolve_endpoint(url, backend, suffix)
 
 

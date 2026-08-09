@@ -50,8 +50,17 @@ clear_cache_alc = Alconna(
 clear_cache_command = on_alconna(clear_cache_alc, auto_send_output=False, permission=SUPERUSER)
 
 _draw_lock = asyncio.Lock()
+_pending_lock = asyncio.Lock()
 _pending = 0
 _user_last_request: dict[str, float] = {}
+_SUPERUSERS: set[str] | None = None
+
+
+def _superusers() -> set[str]:
+    global _SUPERUSERS
+    if _SUPERUSERS is None:
+        _SUPERUSERS = set(get_driver().config.superusers)
+    return _SUPERUSERS
 
 
 def _to_data_uri(data: bytes) -> str:
@@ -203,7 +212,7 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     logger.debug(f"[绘图] prompt={prompt!r} len={len(prompt)}")
 
     cfg = get_config()
-    is_superuser = user_id in set(get_driver().config.superusers)
+    is_superuser = user_id in _superusers()
     logger.debug(f"[绘图] cfg.model={cfg.model} backend={cfg.draw_backend} super={is_superuser}")
 
     if not is_superuser:
@@ -232,13 +241,15 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
     used_model = (arp.options.get("model", {}) or {}).get("model") or cfg.model
     size_opt = (arp.options.get("size", {}) or {}).get("size")
     count_opt = (arp.options.get("n", {}) or {}).get("n")
-    _pending += 1
-    queue_hint = f"（前面还有 {_pending - 1} 个请求）..." if _pending > 1 else "..."
+    async with _pending_lock:
+        _pending += 1
+        pending_snapshot = _pending
+    queue_hint = f"（前面还有 {pending_snapshot - 1} 个请求）..." if pending_snapshot > 1 else "..."
     mode_label = "文生图" if mode == "txt2img" else "图生图"
     await UniMessage.text(f"🎨 {mode_label} | 正在使用 {used_model} 生成中{queue_hint}").send()
     logger.info(f"[绘图] 请求: prompt={prompt!r}, model={used_model}, mode={mode}")
 
-    start_ts = 0.0
+    start_ts: float | None = None
     results: list[str | Path] = []
     usage_info: dict = {"model": used_model}
     error_msg = ""
@@ -260,13 +271,14 @@ async def handle_draw(bot: Bot, event: Event, arp: Arparma, unimsg: UniMsg):
         error_msg = str(e) or f"{type(e).__name__}"
         hit("failed")
     finally:
-        _pending -= 1
+        async with _pending_lock:
+            _pending -= 1
 
     if error_msg:
         return await _finish_with(f"❌ 生成失败: {error_msg}")
 
     hit("success")
-    duration = time.perf_counter() - start_ts
+    duration = time.perf_counter() - (start_ts if start_ts is not None else time.perf_counter())
     duration_text = _format_duration(duration)
 
     try:

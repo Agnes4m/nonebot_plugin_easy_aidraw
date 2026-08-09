@@ -12,9 +12,14 @@ if TYPE_CHECKING:
 
 __all__ = ["check_nsfw", "check_whitelist_blacklist", "get_config"]
 
+__config_cache: EnvConfig | None = None
+
 
 def get_config() -> EnvConfig:
-    return get_plugin_config(EnvConfig)
+    global __config_cache
+    if __config_cache is None:
+        __config_cache = get_plugin_config(EnvConfig)
+    return __config_cache
 
 
 def check_whitelist_blacklist(event: Event) -> tuple[bool, str]:

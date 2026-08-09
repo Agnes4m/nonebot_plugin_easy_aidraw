@@ -121,6 +121,10 @@ async def edit_image(
     prompt: str, image_b64: str, *, size: str | None = None, n: int | None = None
 ) -> tuple[list[str | Path], dict]:
     cfg = get_config()
+    if cfg.draw_backend != "openai":
+        raise NotImplementedError(
+            f"当前后端 {cfg.draw_backend!r} 不支持图生图（仅 openai），请改用 text-to-image 或切换后端。"
+        )
     _require_key(cfg.draw_backend, cfg.draw_api_key)
 
     form_data: dict = {"model": cfg.model, "prompt": prompt, "n": str(n or cfg.draw_n or 1)}
