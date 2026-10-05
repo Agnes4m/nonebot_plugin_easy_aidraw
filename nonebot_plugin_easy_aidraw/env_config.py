@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
 from pydantic import BaseModel, Field
 
 from .backends import BACKEND_DEFAULTS, get_endpoint, resolve_edit_url
@@ -19,14 +17,10 @@ except ImportError:  # pragma: no cover - pydantic v1
 
 def _materialize(instance) -> None:
     """派生字段物化逻辑 —— v1/v2 共用同一份实现。"""
-    instance.model = instance.draw_model or BACKEND_DEFAULTS.get(instance.draw_backend, {}).get(
-        "default_model", "flux"
-    )
+    instance.model = instance.draw_model or BACKEND_DEFAULTS.get(instance.draw_backend, {}).get("default_model", "flux")
     instance.api_url = get_endpoint(instance.draw_backend, instance.draw_api_url, "txt2img")
-    instance.api_url_edits = resolve_edit_url(
-        instance.draw_backend, instance.api_url, instance.draw_api_url_edits
-    )
-    hdrs: Dict[str, str] = {"Content-Type": "application/json"}
+    instance.api_url_edits = resolve_edit_url(instance.draw_backend, instance.api_url, instance.draw_api_url_edits)
+    hdrs: dict[str, str] = {"Content-Type": "application/json"}
     if instance.draw_api_key:
         hdrs["Authorization"] = f"Bearer {instance.draw_api_key}"
     instance.headers = hdrs
@@ -42,14 +36,14 @@ class EnvConfig(BaseModel):
     draw_backend: str = ""
     draw_default_size: str = "1024x1024"
     draw_timeout: int = 120
-    draw_proxy: Optional[str] = None
+    draw_proxy: str | None = None
     draw_nsfw_enabled: bool = False
-    draw_nsfw_keywords: List[str] = []
+    draw_nsfw_keywords: list[str] = []
     draw_whitelist_mode: bool = False
-    draw_whitelist: List[str] = []
-    draw_blacklist: List[str] = []
-    draw_quality: Optional[str] = None
-    draw_n: Optional[int] = None
+    draw_whitelist: list[str] = []
+    draw_blacklist: list[str] = []
+    draw_quality: str | None = None
+    draw_n: int | None = None
     draw_user_cooldown: int = 60
     draw_concurrent: bool = False
     draw_cache_enabled: bool = False
@@ -59,7 +53,7 @@ class EnvConfig(BaseModel):
     model: str = ""
     api_url: str = ""
     api_url_edits: str = ""
-    headers: Dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
 
     def __init__(self, **data):  # type: ignore[override]
         super().__init__(**data)
@@ -67,6 +61,4 @@ class EnvConfig(BaseModel):
 
 
 if _PYDANTIC_V2:
-    EnvConfig._materialize = _model_validator(mode="after")(
-        lambda self: (_materialize(self), self)[1]
-    )
+    EnvConfig._materialize = _model_validator(mode="after")(lambda self: (_materialize(self), self)[1])
